@@ -1,0 +1,187 @@
+AMI ID: 
+NoVA: ami-1c221e76
+Oregon: ami-05cf2265
+
+Set up with 8GB base volume and anotehr 50GB volume.
+Attaches internally as xvdb
+
+ssho -i "/Users/tschroeder/.ssh/amazon-keys/tschroeder.pem" centos@52.24.73.57
+
+## ============SETUP for CENTOS 6.7==============
+sudo su -
+
+service iptables stop
+chkconfig iptables off
+service ip6tables stop
+chkconfig ip6tables off
+
+echo "SELINUX=disabled" > /etc/selinux/config
+echo "SELINUXTYPE=targeted" >> /etc/selinux/config
+setenforce 0
+
+yum -y install parted
+parted /dev/xvdb
+
+mklabel gpt
+unit GB
+mkpart primary 0 50
+quit
+
+mkfs.ext4 /dev/xvdb1
+
+mkdir /u01
+
+vi /etc/fstab
+
+/dev/xvdb1	/u01	ext4	defaults	1 2
+
+mount -a
+df -h
+
+vi /etc/hosts
+	#add hostname with private IP
+
+mkdir -p /u01/install
+cd /u01/install
+
+wget http://ati5.s3.amazonaws.com/oracle/centos67/centos67-rpms.zip
+unzip centos67-rpms.zip
+mv all-rpms temp-repo
+
+yum -y install mlocate java-1.8.0-openjdk.x86_64 java-1.8.0-openjdk-devel.x86_64 wget unzip zip openssh-server openssh-clients perl man createrepo
+
+createrepo /u01/install/temp-repo
+
+cat >/etc/yum.repos.d/temp.repo <<EOL
+[temprepo]
+name=Temporary Repository
+baseurl=file:///u01/install/temp-repo/
+enabled=1
+gpgcheck=0
+EOL
+
+yum -y install oracle-rdbms-server-12cR1-preinstall
+
+echo manager12 | passwd --stdin root
+echo manager12 | passwd --stdin oracle
+echo "oracle ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+mkdir -p /u01/app/oracle/product/12.1.0/dbhome_1 /u01/app/oraInventory /u01/app/oracle/oradata /u01/app/oracle/recovery_area
+
+echo "" >> /home/oracle/.bash_profile
+echo 'export ORACLE_BASE=/u01/app/oracle' >> /home/oracle/.bash_profile
+echo 'export ORACLE_HOME=$ORACLE_BASE/product/12.1.0/dbhome_1' >> /home/oracle/.bash_profile
+echo 'export ORACLE_SID=orcl' >> /home/oracle/.bash_profile
+echo 'export LD_LIBRARY_PATH=$ORACLE_HOME/lib:/lib:/usr/lib' >> /home/oracle/.bash_profile
+echo 'export PATH=$PATH:$ORACLE_HOME/bin' >> /home/oracle/.bash_profile
+
+wget http://ati5.s3.amazonaws.com/oracle/linuxamd64_12102_database_1of2.zip
+wget http://ati5.s3.amazonaws.com/oracle/linuxamd64_12102_database_2of2.zip
+wget http://ati5.s3.amazonaws.com/oracle/apex_5.0.3_en.zip
+wget http://ati5.s3.amazonaws.com/oracle/ords.3.0.3.351.13.24.zip
+wget http://ati5.s3.amazonaws.com/oracle/apache-tomcat-8.0.32.tar.gz
+
+unzip linuxamd64_12102_database_1of2.zip
+unzip linuxamd64_12102_database_2of2.zip
+unzip apex_5.0.3_en.zip
+
+chmod -R 777 /u01
+chown -R oracle:oinstall /u01
+
+su - oracle
+
+cat >/home/oracle/install.rsp <<EOL
+####################################################################
+## INSTALL RESPONSE FILE                                          ##
+####################################################################
+ORACLE_HOSTNAME=localhost
+UNIX_GROUP_NAME=oinstall
+
+ORACLE_HOME=/u01/app/oracle/product/12.1.0/dbhome_1
+ORACLE_BASE=/u01/app/oracle
+INVENTORY_LOCATION=/u01/app/oraInventory
+oracle.install.db.config.starterdb.enableRecovery=true
+oracle.install.db.config.starterdb.storageType=FILE_SYSTEM_STORAGE
+oracle.install.db.config.starterdb.fileSystemStorage.dataLocation=/u01/app/oracle/oradata
+oracle.install.db.config.starterdb.fileSystemStorage.recoveryLocation=/u01/app/oracle/recovery_area
+
+oracle.install.db.DBA_GROUP=dba
+oracle.install.db.OPER_GROUP=dba
+oracle.install.db.BACKUPDBA_GROUP=dba
+oracle.install.db.DGDBA_GROUP=dba
+oracle.install.db.KMDBA_GROUP=dba
+
+oracle.install.db.config.starterdb.type=GENERAL_PURPOSE
+oracle.install.db.config.starterdb.globalDBName=orcl.us-west-2.compute.internal
+oracle.install.db.config.starterdb.SID=orcl
+oracle.install.db.ConfigureAsContainerDB=true
+oracle.install.db.config.PDBName=pdborcl
+
+oracle.install.db.config.starterdb.memoryOption=true
+oracle.install.db.config.starterdb.memoryLimit=1506
+
+oracle.install.db.config.starterdb.password.ALL=manager12
+#oracle.install.db.config.starterdb.password.SYS=
+#oracle.install.db.config.starterdb.password.SYSTEM=
+#oracle.install.db.config.starterdb.password.DBSNMP=
+#oracle.install.db.config.starterdb.password.PDBADMIN=
+
+####################################################################
+## Don't need to change this section:                             ##
+####################################################################
+oracle.install.responseFileVersion=/oracle/install/rspfmt_dbinstall_response_schema_v12.1.0
+oracle.install.option=INSTALL_DB_AND_CONFIG
+oracle.install.db.InstallEdition=EE
+SELECTED_LANGUAGES=en
+oracle.install.db.config.starterdb.installExampleSchemas=false
+oracle.install.db.config.starterdb.characterSet=AL32UTF8
+oracle.install.db.rac.configurationType=
+oracle.install.db.CLUSTER_NODES=
+oracle.install.db.isRACOneInstall=false
+oracle.install.db.racOneServiceName=
+oracle.install.db.rac.serverpoolName=
+oracle.install.db.rac.serverpoolCardinality=0
+oracle.install.db.config.starterdb.managementOption=DEFAULT
+oracle.install.db.config.starterdb.omsHost=
+oracle.install.db.config.starterdb.omsPort=0
+oracle.install.db.config.starterdb.emAdminUser=
+oracle.install.db.config.starterdb.emAdminPassword=
+oracle.install.db.config.asm.diskGroup=
+oracle.install.db.config.asm.ASMSNMPPassword=
+MYORACLESUPPORT_USERNAME=
+MYORACLESUPPORT_PASSWORD=
+SECURITY_UPDATES_VIA_MYORACLESUPPORT=false
+DECLINE_SECURITY_UPDATES=true
+PROXY_HOST=
+PROXY_PORT=
+PROXY_USER=
+PROXY_PWD=
+COLLECTOR_SUPPORTHUB_URL=
+EOL
+
+cat >/home/oracle/config.rsp <<EOL
+####################################################################
+## CONFIG RESPONSE FILE                                           ##
+####################################################################
+oracle.assistants.server|S_SYSPASSWORD=manager12
+oracle.assistants.server|S_SYSTEMPASSWORD=manager12
+oracle.assistants.server|S_DBSNMPPASSWORD=manager12
+oracle.assistants.server|S_PDBADMINPASSWORD=manager12
+oracle.assistants.server|S_EMADMINPASSWORD=manager12
+oracle.assistants.server|S_ASMSNMPPASSWORD=
+EOL
+
+## Run installer
+/u01/install/database/runInstaller -silent -ignoreSysPrereqs -ignorePrereq -responsefile /home/oracle/install.rsp
+
+## Run two root scripts
+#  Become root again
+exit
+
+/u01/app/oraInventory/orainstRoot.sh
+/u01/app/oracle/product/12.1.0/dbhome_1/root.sh
+
+## Run final config
+su - oracle
+/u01/app/oracle/product/12.1.0/dbhome_1/cfgtoollogs/configToolAllCommands RESPONSE_FILE=/home/oracle/config.rsp
+

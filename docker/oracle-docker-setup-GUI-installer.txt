@@ -1,0 +1,217 @@
+##=================
+## Create Docker Machine with correct Boot2Docker iso
+##=================
+docker-machine rm dev
+
+## 50G disk size, 4G of RAM
+docker-machine create -d virtualbox --virtualbox-cpu-count "2" --virtualbox-memory "4096" --virtualbox-disk-size "51200" --virtualbox-boot2docker-url=file:///Users/tschroeder/tank/dev/docker/docker-machine-isos/boot2docker_1-9-0.iso dev
+
+
+## Add 8GB extra swap to Docker Machine first:
+##############################################
+docker-machine ssh dev
+export SWAPFILE=/mnt/sda1/swapfile
+sudo dd if=/dev/zero of=$SWAPFILE bs=1024 count=8388608
+sudo mkswap $SWAPFILE
+sudo chmod 600 $SWAPFILE
+sudo swapon $SWAPFILE
+exit
+
+
+#First iTerm window:
+#####################
+socat TCP-LISTEN:6000,reuseaddr,fork UNIX-CLIENT:\"$DISPLAY\"
+
+#Second iTerm window:
+######################
+docker-delete-route
+
+docker-add-route
+
+docker-kill-clean
+
+docker run -id --privileged \
+-m 4096M --memory-swap=12288M \
+--name oracle -h oracle.dev \
+centos:6
+
+docker-dns-add oracle
+
+docker-enter oracle
+
+####################################################
+
+yum -y update
+
+yum -y install wget openssh-server openssh-clients
+
+chkconfig sshd on
+service sshd start
+
+service iptables stop
+chkconfig iptables off
+service ip6tables stop
+chkconfig ip6tables off
+
+echo "SELINUX=disabled" > /etc/selinux/config
+echo "SELINUXTYPE=targeted" >> /etc/selinux/config
+setenforce 0
+
+wget http://public-yum.oracle.com/RPM-GPG-KEY-oracle-ol6 -O /etc/pki/rpm-gpg/RPM-GPG-KEY-oracle
+wget http://public-yum.oracle.com/public-yum-ol6.repo -O /etc/yum.repos.d/public-yum-ol6.repo
+yum -y install oracle-rdbms-server-12cR1-preinstall
+
+echo manager12 | passwd --stdin root
+echo manager12 | passwd --stdin oracle
+echo "oracle ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+mkdir -p /u01/app/oracle/product/12.1.0/dbhome_1/lib /u01/app/oraInventory /u01/app/oracle/oradata /u01/app/oracle/recovery_area
+
+chmod -R 777 /u01
+chown -R oracle:oinstall /u01
+
+echo "" >> /home/oracle/.bash_profile
+echo 'export ORACLE_BASE=/u01/app/oracle' >> /home/oracle/.bash_profile
+echo 'export ORACLE_HOME=$ORACLE_BASE/product/12.1.0/dbhome_1' >> /home/oracle/.bash_profile
+echo 'export ORACLE_SID=orcl' >> /home/oracle/.bash_profile
+echo 'export LD_LIBRARY_PATH=$ORACLE_HOME/lib:/lib:/usr/lib' >> /home/oracle/.bash_profile
+echo 'export PATH=$PATH:$ORACLE_HOME/bin' >> /home/oracle/.bash_profile
+
+sed -i 's/localhost.localdomain/oracle.dev/g' /etc/sysconfig/network
+
+exit
+
+####################################################################
+## Set up to export display for GUI installer
+####################################################################
+
+#First iTerm window:
+#####################
+socat TCP-LISTEN:6000,reuseaddr,fork UNIX-CLIENT:\"$DISPLAY\"
+
+#Second iTerm window:
+######################
+docker stop oracle
+docker export oracle | docker import - oracle:preinstall
+
+docker-kill-clean
+
+docker run -id --privileged -e DISPLAY=192.168.99.1:0 \
+-m 4096M --memory-swap=9216M \
+--name oracle -h oracle.dev \
+-v /Users/tschroeder/tank/dev/oracle/docker/mount:/home/oracle/mount \
+oracle:preinstall \
+/sbin/init
+
+docker-dns-add oracle
+
+docker-enter oracle
+
+####################################################################
+
+su - oracle
+
+cd ~/mount/install/database
+cp /home/oracle/mount/libjavavm12.a /u01/app/oracle/product/12.1.0/dbhome_1/lib/.
+./runInstaller
+
+## Installed software and database, did not create as container database
+## Ignored prerequisite check failures
+## If you get the following error:
+##    Error in invoking target 'irman ioracle' of makefile '/u01/app/oracle/product/12.1.0/dbhome_1/rdbms/lib/ins_rdbms.mk'. See '/u01/app/oraInventory/logs/installActions2016-03-02_04-12-21PM.log' for details.
+## When you get the error run the following in a terminal window as oracle user 
+cp /u01/app/oracle/product/12.1.0/dbhome_1/javavm/jdk/jdk7/lib/libjavavm12.a /u01/app/oracle/product/12.1.0/dbhome_1/lib/
+## Then click Retry to complete the installation
+
+Root scripts:
+/tank/app/oraInventory/orainstRoot.sh
+/tank/app/oracle/product/12.1.0/dbhome_1/root.sh
+
+sqlplus / as sysdba
+shutdown immediate
+
+####################################################################
+
+docker stop oracle
+docker export oracle | docker import - oracle:12c
+
+docker-kill-clean
+
+docker run -id --privileged \
+--name oracle -h oracle.dev \
+-v /Users/tschroeder/tank/dev/oracle/docker/mount:/home/oracle/mount \
+oracle:12c \
+/sbin/init
+
+docker-dns-add oracle
+
+docker-enter oracle
+
+####################################################################
+
+## Remove extra swap
+docker-machine stop dev
+docker-machine start dev
+docker-machine ssh dev
+export SWAPFILE=/mnt/sda1/swapfile
+rm -rf $SWAPFILE
+exit
+
+
+
+yum -y install which mlocate java-1.8.0-openjdk.x86_64 java-1.8.0-openjdk-devel.x86_64 wget openssh-server openssh-clients passwd sudo tar man perl
+
+
+####################################################################
+####################################################################
+## OLDER NOTES
+####################################################################
+####################################################################
+
+## Still need to look at /etc/sysctl.conf - some keys not recognized
+## To check, run sysctl -p
+
+###==========================
+### Initial repo commands - didn't work as well as I'd hoped - no update functionality
+###==========================
+yum -y install --downloadonly --downloaddir=/root/mount/rpms/createrepo createrepo
+
+yum -y update --downloadonly --downloaddir=/root/mount/rpms/update
+
+yum -y install --downloadonly --downloaddir=/root/mount/rpms/install which mlocate java-1.8.0-openjdk.x86_64 java-1.8.0-openjdk-devel.x86_64 wget openssh-server openssh-clients passwd sudo tar man
+
+
+cd /root/mount/rpms/createrepo
+rpm -Uvh libxml2-2.7.6-20.el6_7.1.x86_64.rpm
+rpm -Uvh deltarpm-3.5-0.5.20090913git.el6.x86_64.rpm
+rpm -Uvh python-deltarpm-3.5-0.5.20090913git.el6.x86_64.rpm
+rpm -Uvh libxml2-python-2.7.6-20.el6_7.1.x86_64.rpm
+rpm -Uvh createrepo-0.9.9-22.el6.noarch.rpm
+
+mkdir /tmp/repobak
+mv /etc/yum.repos.d/* /tmp/repobak
+repoDir=/tmp/repo
+mkdir $repoDir
+
+
+cp /root/mount/rpms/install/* $repoDir
+createrepo $repoDir
+
+cat > /etc/yum.repos.d/temp.repo <<EOL
+[temprepo]
+name=Temporary Repository
+baseurl=file://${repoDir}
+enabled=1
+gpgcheck=0
+EOL
+
+yum -y install which mlocate java-1.8.0-openjdk.x86_64 java-1.8.0-openjdk-devel.x86_64 wget openssh-server openssh-clients passwd sudo tar man
+
+cp /tank/app/oracle/product/12.1.0/dbhome_1/rdbms/install/sbs/dbmssml.sbs /tank/app/oracle/product/12.1.0/dbhome_1/rdbms/admin/dbmssml.sql
+
+###=================
+### Swap space
+###=================
+grep MemTotal /proc/meminfo
+grep SwapTotal /proc/meminfo
+

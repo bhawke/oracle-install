@@ -1,0 +1,28 @@
+## ============CENTOS 6.7 OFFLINE SETUP================
+## Download all required RPMs
+
+AMI ID: 
+NoVA: ami-1c221e76
+Oregon: ami-05cf2265
+
+sudo su - 
+
+yum -y remove createrepo mlocate java-1.8.0-openjdk-devel.x86_64 wget unzip zip openssh-server openssh-clients man sudo tar which oracle-rdbms-server-12cR1-preinstall
+
+yum -y install --downloadonly --downloaddir=/root/rpms/createrepo createrepo
+
+yum -y install --downloadonly --downloaddir=/root/rpms/utils mlocate java-1.8.0-openjdk-devel.x86_64 wget unzip zip openssh-server openssh-clients man sudo tar which
+
+yum -y install wget
+
+wget http://public-yum.oracle.com/RPM-GPG-KEY-oracle-ol6 -O /etc/pki/rpm-gpg/RPM-GPG-KEY-oracle
+wget http://public-yum.oracle.com/public-yum-ol6.repo -O /etc/yum.repos.d/public-yum-ol6.repo
+yum -y --downloadonly --downloaddir=/root/rpms/oracle install oracle-rdbms-server-12cR1-preinstall
+
+mv /root/rpms /home/centos
+chown -R centos:centos /home/centos
+
+## From Mac:
+mkdir ./centos67-rpms
+cd ./centos-rpms
+scp -r -i /Users/tschroeder/.ssh/amazon-keys/tschroeder.pem centos@54.174.154.58:/home/centos/rpms/* .
